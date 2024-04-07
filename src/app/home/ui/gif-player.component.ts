@@ -138,7 +138,6 @@ export class GifPlayerComponent {
 
     // effects
     effect(() => {
-      console.log(this.thumbnail());
       const video = this.videoElement().nativeElement;
       const playing = this.playing();
       const status =  this.status();

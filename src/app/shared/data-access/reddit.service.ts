@@ -1,8 +1,8 @@
 import { Injectable, computed, inject, signal } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { Gif, RedditPost, RedditResponse } from "../interfaces";
-import { EMPTY, Observable, Subject, catchError, concatMap, debounceTime, distinctUntilChanged, expand, map, of, startWith, switchMap } from "rxjs";
-import { HttpClient } from "@angular/common/http";
+import { EMPTY, Subject, catchError, concatMap, debounceTime, distinctUntilChanged, expand, map, of, startWith, switchMap } from "rxjs";
+import { HttpClient, HttpErrorResponse } from "@angular/common/http";
 import { FormControl } from "@angular/forms";
 
 export interface GifState {
@@ -17,6 +17,8 @@ export class RedditService {
 
   http = inject(HttpClient);
   subredditFormControl = new FormControl();
+
+  private error$ = new Subject<string | null>();
 
   // state
   private state = signal<GifState>({
@@ -45,7 +47,7 @@ export class RedditService {
       this.pagination$.pipe(
         startWith(null),
         concatMap((lastKnownGif) =>
-          this.fetchFromReddit(subredit, lastKnownGif, 2000).pipe(
+          this.fetchFromReddit(subredit, lastKnownGif, 20).pipe(
             expand((response, index) => {
               const {gifs, lastKnownGif, gifRequired } = response;
               const remainingGifsToFecth = gifs.length - gifRequired;
@@ -72,7 +74,10 @@ export class RedditService {
       `https://www.reddit.com/r/${subreddit}/hot/.json?limit=${gifRequired}` + (after ? `&after=${after}` : '')
     )
     .pipe(
-      catchError(() => EMPTY),
+      catchError((err) => {
+        this.handleError(err);
+        return EMPTY;
+      }),
       map (redditResponse => {
         const posts = redditResponse.data.children;
         const lastKnownGif = posts.length ? posts[posts.length - 1].data.name : null;
@@ -160,6 +165,25 @@ export class RedditService {
         gifs:[]
       }))
     });
+
+    this.error$.pipe(takeUntilDestroyed()).subscribe((error) => {
+      this.state.update(state => ({
+        ...state,
+        error
+      }))
+    });
+  }
+
+  private handleError(err: HttpErrorResponse){
+    console.log(err);
+    // Handle specific error cases
+    if(err.status === 404 && err.url) {
+      this.error$.next(`Failed to load gifs for /r/${err.url.split(`/`)[4]}`);
+      return;
+    }
+
+  // generic error if no case match
+  this.error$.next(err.statusText);
   }
 
 }
